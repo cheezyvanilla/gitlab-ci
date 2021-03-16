@@ -1,0 +1,8 @@
+version: '3'
+
+services:
+  my_service_name: #change this service name to run another container on the same machine
+    image: 'registry.gitlab.com/your/image/name:latest'
+    restart: always
+    ports:
+      - 8080:8080

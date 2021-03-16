@@ -1,0 +1,48 @@
+variables:
+
+  RELEASE_IMAGE: registry.gitlab.com/your/image/name:latest
+  CI_REGISTRY: registry.gitlab.com
+
+
+stages:
+  - build
+  - deploy
+
+
+build:
+
+  stage: build
+  image: docker:latest
+  only:
+    - "dev"
+  services:
+  - docker:dind
+  before_script:
+    - "docker login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${CI_REGISTRY}"
+  script:
+    - "docker build --pull -t $RELEASE_IMAGE ."
+    - "docker push $RELEASE_IMAGE"
+  after_script:
+    - "docker logout ${CI_REGISTRY}"
+
+deploy:
+  stage: deploy
+  image: ubuntu:16.04
+  only:
+    - "dev" #only triggered by dev branch and take code from the dev branch
+  environment: production
+  services:
+    - docker:dind
+  before_script: #SSH login and verification
+    - mkdir -p ~/.ssh
+    - echo "$SERVER_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval "$(ssh-agent -s)"
+    - echo "$SERVER_PRIVATE_KEY"
+    - ssh-add ~/.ssh/id_rsa
+    - ssh-keyscan -H ${SERVER_IP} >> ~/.ssh/known_hosts
+  #stop the running application and re run with docker compose
+  script: 
+    - scp -r ./docker-compose.yml ubuntu@${SERVER_IP}:~/
+    - ssh ubuntu@$SERVER_IP "docker login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${CI_REGISTRY}; docker-compose -f docker-compose.yml stop my_service_name; docker-compose -f docker-compose.yml rm my_service_name --force; docker pull ${RELEASE_IMAGE}; docker-compose -f docker-compose.yml up -d"
